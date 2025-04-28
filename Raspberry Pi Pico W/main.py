@@ -53,7 +53,6 @@ class NeoPixel:
         self.sm.active(1)
         # Array stores colors in GRB format for direct PIO use
         self.ar = array.array("I", [0] * self.num_leds)
-        print(f"NeoPixel initialized: Pin={self.pin_num}, LEDs={self.num_leds}, Brightness={self.brightness}")
 
     def pixels_show(self):
         # Apply brightness - Note: colors already stored in GRB format in self.ar
@@ -74,8 +73,6 @@ class NeoPixel:
             r, g, b = color
             # Store as GRB unsigned integer: (G << 16) + (R << 8) + B
             self.ar[i] = (g << 16) + (r << 8) + b
-        # else:
-            # print(f"Warning: Pixel index {i} out of range (0-{self.num_leds-1})")
 
     def pixels_fill(self, color):
         # Fill all pixels with the same color
@@ -88,45 +85,31 @@ class NeoPixel:
 def connect_wifi():
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
-    print(f"Attempting to connect to WiFi SSID: {SSID}...")
     wlan.connect(SSID, PASSWORD)
     max_wait = 15 # Increased wait time
     while max_wait > 0:
         status = wlan.status()
-        print(f"  Connection status: {status}") # Print status codes
-        # Reference: 0=LINK_DOWN, 1=LINK_JOIN, 2=LINK_NOIP, 3=LINK_UP, -1=LINK_FAIL, -2=LINK_NONET, -3=LINK_BADAUTH
         if status < 0 or status >= 3:
             break
         max_wait -= 1
         time.sleep(1)
 
     if wlan.status() != 3:
-        print(f"--- WiFi connection failed! Final Status: {wlan.status()} ---")
         return False
     else:
-        print("--- Wi-Fi connected successfully. ---")
         config = wlan.ifconfig()
-        print(f"IP Address: {config[0]}")
-        print(f"Subnet Mask: {config[1]}")
-        print(f"Gateway: {config[2]}")
-        print(f"DNS Server: {config[3]}")
         return True
 
 # --- Time Synchronization ---
 def sync_time():
     # Pico RTC doesn't track timezones well, NTP usually provides UTC
     try:
-        print("Attempting NTP time sync...")
         ntptime.settime() # Sets UTC time from NTP server
         # Get time immediately after sync
         current_utc_timestamp = utime.time()
         current_local_tuple = utime.localtime(current_utc_timestamp) # localtime() uses board's configured offset from UTC (usually 0)
-        print(f"--- Time synced successfully. ---")
-        print(f"Current UTC timestamp: {current_utc_timestamp}")
-        print(f"Device time tuple (likely UTC): {current_local_tuple}")
         return True
     except Exception as e:
-        print(f"--- NTP sync failed: {e} ---")
         # Common errors: OSError: -2 (No route to host / DNS failure?), OSError: 110 (ETIMEDOUT)
         return False
 
@@ -141,7 +124,6 @@ def date_to_tuple(date_str):
     try:
         return (int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
     except ValueError:
-        print(f"Error: Could not parse date string: {date_str}")
         return None
 
 def date_compare(date1_tuple, date2_tuple):
@@ -159,18 +141,14 @@ def parse_ics(ics_content):
     events = []
     current_event = {}
     in_event = False
-    #print("    Starting ICS Parse...") # Can be very verbose
     for line in ics_content.splitlines(): # Use splitlines() for robustness
         line = line.strip()
         if line == "BEGIN:VEVENT":
             in_event = True
             current_event = {}
         elif line == "END:VEVENT" and in_event:
-            #print(f"      Found event: {current_event}") # Debug: print raw event data
             if "dtstart" in current_event and "rrule" in current_event and "summary" in current_event:
                  events.append(current_event)
-            # else:
-                 # print(f"      Skipping incomplete event: {current_event}")
             in_event = False
             current_event = {} # Reset for next event
         elif in_event and ":" in line:
@@ -191,9 +169,7 @@ def parse_ics(ics_content):
                 elif key == "SUMMARY":
                     current_event["summary"] = value
             except ValueError:
-                print(f"      Warning: Could not split line: {line}")
                 continue # Skip malformed line
-    #print(f"    ICS Parse finished, found {len(events)} valid events.")
     return events
 
 # --- Date Computation from RRULE (Simplified) ---
@@ -202,11 +178,9 @@ def compute_dates(dtstart, rrule, current_year):
     # Assumes DTSTART is the first occurrence and day of week is fixed by DTSTART
     # Does NOT parse BYDAY, COUNT, UNTIL etc. from RRULE
     # Returns list of (Y, M, D) tuples for the current year and potentially next year
-    print(f"      compute_dates called with: start={dtstart}, rule={rrule}, year={current_year}")
     dates = []
     start_date_tuple = date_to_tuple(dtstart)
     if not start_date_tuple:
-        print("      Error: Invalid DTSTART format for computation.")
         return []
 
     # Try to extract interval
@@ -216,9 +190,7 @@ def compute_dates(dtstart, rrule, current_year):
             interval_part = rrule.split('INTERVAL=')[1]
             interval = int(interval_part.split(';')[0]) # Get integer before next semicolon or end
         except ValueError:
-            print(f"      Warning: Could not parse INTERVAL from RRULE: {rrule}, using default 1.")
             interval = 1
-    print(f"        Using interval: {interval} weeks")
 
     # !!! CRITICAL LIMITATION !!!
     # This code DOES NOT parse BYDAY from RRULE. It assumes ALL events occur
@@ -232,12 +204,9 @@ def compute_dates(dtstart, rrule, current_year):
         # We only care about the date part for weekly calculations
         start_weekday = time.gmtime(utime.mktime(start_date_tuple + (0,0,0,0,0)))[6] # Get weekday (Mon=0)
         current_date_secs = utime.mktime(start_date_tuple + (0,0,0,0,0)) # Seconds since epoch for DTSTART
-        print(f"        DTSTART tuple: {start_date_tuple}, Weekday (Mon=0): {start_weekday}")
     except OverflowError:
-         print("      Error: DTSTART date too far in past/future for mktime.")
          return []
     except Exception as e:
-         print(f"      Error calculating start time: {e}")
          return []
 
 
@@ -260,26 +229,18 @@ def compute_dates(dtstart, rrule, current_year):
              if current_ymd not in dates: # Avoid duplicates if logic overlaps
                  dates.append(current_ymd)
                  computed_count +=1
-                 # print(f"        Adding date: {current_ymd}") # Can be very verbose
-
         # Move to the next occurrence
         current_date_secs += seconds_increment
-
-    print(f"      compute_dates finished. Found {computed_count} potential dates based on interval.")
     return dates
 
 # --- Get Next Bin Day Logic (Modified for Local Files) ---
 def get_next_bin_day():
-    print("\n--- Running get_next_bin_day (Local File Mode) ---")
-
     # --- Time Sync is STILL NEEDED for accurate date comparisons ---
     if not sync_time():
-         print("Skipping bin check due to time sync failure.")
          return None, [] # Indicate failure
 
     current_date_tuple = get_current_date()
     current_year = current_date_tuple[0]
-    print(f"Current date (Y, M, D): {current_date_tuple}")
 
     all_events = []
     # --- Define the paths to the local files on the Pico's filesystem ---
@@ -289,94 +250,54 @@ def get_next_bin_day():
 
     for file_path in local_files:
         try:
-            print(f"Attempting to read local file: {file_path}")
             # Open the local file for reading ('r')
             with open(file_path, 'r') as f:
                 ics_content = f.read() # Read the entire file content
-
-            print(f"  Successfully read file {file_path} (length: {len(ics_content)})")
-            print(f"  Parsing content...")
             # Parse the content read from the file
             parsed_events = parse_ics(ics_content)
-            print(f"  Found {len(parsed_events)} valid VEVENTs in {file_path}")
             all_events.extend(parsed_events)
 
         except OSError as e:
             # OSError typically means "File not found" in MicroPython
-            print(f"--- ERROR READING FILE {file_path}: {e} ---")
-            print(f"    => Ensure the file '{file_path.lstrip('/')}' exists in the Pico's root directory!")
-            # Decide how to handle: stop, or continue with other files?
-            # Let's continue to see if the other file works.
             continue # Try the next file in the list
         except Exception as e:
-            print(f"--- Error processing file {file_path}: {e} ---")
             continue # Try the next file
-
-    # --- The rest of the function remains the same as before ---
-    # It now works with the 'all_events' list populated from local files
-
-    print(f"Total VEVENTs parsed from all local files: {len(all_events)}")
     if not all_events:
-        print("No events found after parsing all local files.")
         return None, []
-
     relevant_summaries = ["Recycling trolley collection", "Black bin collection", "Green bin collection"]
-    print(f"Filtering for relevant summaries: {relevant_summaries}")
-
     bin_dates = []
-    print("Computing collection dates from parsed events...")
     for event in all_events:
         summary = event.get("summary", "Unknown").strip()
         dtstart = event.get("dtstart")
         rrule = event.get("rrule")
-
         if summary in relevant_summaries and dtstart and rrule:
-             print(f"  Processing relevant event: {summary}, Start={dtstart}, Rule={rrule}")
              dates = compute_dates(dtstart, rrule, current_year)
              for date_tuple in dates:
                  bin_dates.append((date_tuple, summary))
         else:
              pass # Skip irrelevant/incomplete events
-
-    print(f"Total relevant collection date entries computed: {len(bin_dates)}")
     if not bin_dates:
-        print("No relevant bin dates could be computed.")
         return None, []
-
-    print("Sorting computed collection dates...")
     bin_dates.sort()
-
     next_collection_date = None
     next_collection_bins = []
-    print(f"Searching for first collection date after {current_date_tuple}...")
     for date_tuple, summary in bin_dates:
         comparison = date_compare(date_tuple, current_date_tuple)
         if comparison > 0:
             if next_collection_date is None:
                 next_collection_date = date_tuple
                 next_collection_bins.append(summary)
-                print(f"    Found potential next date: {next_collection_date} with bin: {summary}")
             elif date_tuple == next_collection_date:
                 if summary not in next_collection_bins:
                      next_collection_bins.append(summary)
             else:
                 break # Stop searching
-
-    print(f"--- Search finished. ---")
     if next_collection_date:
-        print(f"Next Collection Date Found: {next_collection_date[0]}-{next_collection_date[1]:02d}-{next_collection_date[2]:02d}")
-        print(f"Bins for that day: {next_collection_bins}")
     else:
-        print(f"No future collection dates found in the computed range.")
-
     return next_collection_date, next_collection_bins
 
 # --- Update LEDs based on Bin Data (Handles Black+Green Split - LEFT/RIGHT) ---
 def update_leds(led_strip, bins_for_next_day):
-    # ... (Initial prints and flag setup remain the same) ...
-    print(f"\n--- Updating LEDs ---")
-    print(f"Received bins for next collection day: {bins_for_next_day}")
-
     BLACK_BIN = "Black bin collection"
     GREEN_BIN = "Green bin collection"
     RECYCLING_BIN = "Recycling trolley collection"
@@ -387,7 +308,6 @@ def update_leds(led_strip, bins_for_next_day):
 
     # --- Priority 1: Handle specific Black AND Green case ---
     if has_black and has_green:
-        print("  Setting split GREEN / PURPLE (Black + Green bins) - Attempting LEFT/RIGHT")
         message = "Next: Black bin + Green bin"
         if has_recycling: message += " + Recycling"
 
@@ -408,86 +328,52 @@ def update_leds(led_strip, bins_for_next_day):
     # --- Priorities 2, 3, 4, 5, Fallback remain the same as previous version ---
     # (Handling Black only, Green only, Recycling only, No bins/Error)
     elif has_black:
-        print("  Setting color to GRAY (Black bin present, NO green bin)")
         led_strip.pixels_fill(COLOR_PURPLE)
         message = "Next: Black bin"
         if has_recycling: message += " + Recycling"
     elif has_green:
-        print("  Setting color to GREEN (Green bin present, NO black bin)")
         led_strip.pixels_fill(COLOR_GREEN)
         message = "Next: Green bin"
         if has_recycling: message += " + Recycling"
     elif len(bins_for_next_day) == 1 and has_recycling:
-        print("  Setting color to BLUE (Only recycling present)")
         led_strip.pixels_fill(COLOR_BLUE)
         message = "Next: Recycling only"
     elif not bins_for_next_day:
-        print("  Setting color to RED (Error/No bins found)")
         led_strip.pixels_fill(COLOR_RED)
         message = "Error or no bins found"
     else:
-        print(f"  Setting color to RED (Unknown non-empty bin combination: {bins_for_next_day})")
         led_strip.pixels_fill(COLOR_RED)
         message = "Error: Unknown bin combination"
-
-    # --- Final Steps ---
-    print(f"  Final logic decision: Message='{message}'")
-    print("  Calling pixels_show() to update LEDs...")
     led_strip.pixels_show()
-    print("  LEDs updated.")
 
 # --- Main Execution Loop ---
 def main():
-    print("\n--- Device Starting ---")
     # Initialize NeoPixel strip early so we can show status
     led_strip = NeoPixel(PIN_NUM, NUM_LEDS, LED_BRIGHTNESS)
     led_strip.pixels_fill(COLOR_RED) # Start with Red to indicate booting/connecting
     led_strip.pixels_show()
     time.sleep(1) # Small delay
-
     if not connect_wifi():
-        print("Fatal Error: Could not connect to WiFi. Halting.")
         # Keep LEDs Red
         while True: time.sleep(60) # Stay here, maybe blink red?
-
     # Indicate WiFi connected (optional)
     led_strip.pixels_fill(COLOR_GREEN) # Green briefly for WiFi OK
     led_strip.pixels_show()
     time.sleep(2)
     led_strip.pixels_fill(COLOR_OFF) # Turn off before first check
     led_strip.pixels_show()
-
-
     while True:
-        print("\n======= Starting Main Loop Iteration =======")
         current_hour = utime.localtime()[3] # Get current hour (approx UTC)
-
-        # Optional: Only run the full check during certain hours (e.g., overnight/early morning)
-        # to reduce server load and network traffic, although daily is fine too.
-        # if 1 <= current_hour <= 5: # Example: Only run between 1 AM and 5 AM
-        #    print(f"Current hour ({current_hour}) is within check window. Running check.")
-        # else:
-        #    print(f"Current hour ({current_hour}) outside check window (1-5 AM). Skipping check.")
-        #    # Calculate sleep until next check window
-        #    # ... (complex sleep calculation needed here) ...
-        #    # time.sleep(sleep_seconds)
-        #    # continue # Skip to next loop iteration
-
         next_date, next_bins = get_next_bin_day() # Fetch and process data
-
         if next_date:
-            print(f"==> Result from get_next_bin_day: Date={next_date}, Bins={next_bins}")
             update_leds(led_strip, next_bins)
         else:
-            print("==> Result from get_next_bin_day: No date found or error during process.")
             update_leds(led_strip, []) # Pass empty list to trigger error color
 
         # --- Sleep until next check (e.g., 3 AM next day) ---
-        print("--- Calculating sleep time ---")
         # Get current time again after processing
         current_time_secs = utime.time()
         current_time_tuple = utime.localtime(current_time_secs)
-
         # Target time: 3:00 AM tomorrow
         target_hour = 3
         target_min = 0
@@ -496,67 +382,38 @@ def main():
         secs_per_day = 24 * 3600
         tomorrow_secs = current_time_secs + secs_per_day
         tomorrow_tuple = utime.localtime(tomorrow_secs)
-
         # Construct target time tuple for tomorrow 3 AM
         target_time_tuple = (tomorrow_tuple[0], tomorrow_tuple[1], tomorrow_tuple[2],
                              target_hour, target_min, 0, 0, 0) # Y, M, D, H, M, S, Wday, Yday
         try:
             target_time_secs = utime.mktime(target_time_tuple)
         except OverflowError:
-             print("Error: Target date for sleep too far in future.")
              target_time_secs = current_time_secs + secs_per_day # Fallback: sleep 24h
-
         # Calculate sleep duration
         sleep_seconds = target_time_secs - current_time_secs
-
         # Adjust if target time calculation resulted in the past (e.g., ran just after 3 AM)
         if sleep_seconds < 0:
-            print("Warning: Target sleep time was in the past. Adding 24 hours.")
             sleep_seconds += secs_per_day
         # Set a minimum sleep time to avoid busy-waiting if something is wrong
         if sleep_seconds < 60:
-             print("Warning: Calculated sleep time very short. Setting minimum 60s.")
              sleep_seconds = 60
-
         # Convert to hours/minutes for display
         sleep_hours = int(sleep_seconds // 3600)
         sleep_minutes = int((sleep_seconds % 3600) // 60)
-        print(f"Current time: {current_time_tuple[3]:02d}:{current_time_tuple[4]:02d}:{current_time_tuple[5]:02d}")
-        print(f"Target time : {target_hour:02d}:{target_min:02d}:00 (Tomorrow)")
-        print(f"Sleeping for {sleep_seconds:.0f} seconds (approx {sleep_hours} hours, {sleep_minutes} minutes)...")
-
         time.sleep(sleep_seconds)
-        print("--- Woke up from sleep ---")
-
 
 # --- Run Main Program ---
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print("\n---!!! TOP LEVEL CRITICAL ERROR CAUGHT !!!---")
-        # Try to log the error type and message
-        print(f"Error Type: {type(e).__name__}")
-        print(f"Error Details: {e}")
-        # Try to print traceback if sys module is available (may not be in all MicroPython builds)
-        try:
-            import sys
-            sys.print_exception(e)
-        except ImportError:
-            print("(Cannot print full traceback: sys module not available)")
-
         # Attempt to set LEDs to solid Red to indicate fatal error
-        print("Attempting to set LEDs RED due to fatal error...")
         try:
             # Re-initialize NeoPixel in case the error was related to it
             error_strip = NeoPixel(PIN_NUM, NUM_LEDS, 0.1) # Low brightness error
             error_strip.pixels_fill(COLOR_RED)
             error_strip.pixels_show()
-            print("LEDs set to RED.")
         except Exception as final_e:
-            print(f"Could not set final error color: {final_e}")
-
-        print("--- PROGRAM HALTED DUE TO ERROR ---")
         # Loop forever flashing red? Or just sleep.
         while True:
             time.sleep(60) # Sleep indefinitely after error
