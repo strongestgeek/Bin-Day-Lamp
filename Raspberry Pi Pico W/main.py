@@ -16,12 +16,13 @@ NUM_LEDS = 160      # Number of LEDs in your strip
 PIN_NUM = 6        # GPIO pin connected to Data In (DI/DIN)
 LED_BRIGHTNESS = 0.02 # Brightness (0.0 to 1.0)
 
-# --- LED Colors (RGB) ---
+# --- RGB LED Colours (GRB) ---
 COLOR_BLUE = (0, 0, 255)   # Only recycling
 COLOR_GREEN = (255, 0, 0)    # Green bin
-COLOR_RED = (0, 255, 0)      # Error or undefined state
-COLOR_OFF = (0, 0, 0)        # LEDs off
 COLOR_PURPLE = (0, 128, 128) # Representing Black bin
+COLOR_RED = (0, 255, 0)      # Error or undefined state
+COLOR_Yellow = (128, 128, 0) # Representing Black bin
+COLOR_OFF = (0, 0, 0)        # LEDs off
 
 # --- PIO Program for WS2812 LEDs ---
 @rp2.asm_pio(
@@ -357,7 +358,7 @@ def main():
         # Keep LEDs Red
         while True: time.sleep(60) # Stay here, maybe blink red?
     # Indicate WiFi connected (optional)
-    led_strip.pixels_fill(COLOR_GREEN) # Green briefly for WiFi OK
+    led_strip.pixels_fill(COLOR_Yellow) # Yellow briefly for WiFi OK
     led_strip.pixels_show()
     time.sleep(2)
     led_strip.pixels_fill(COLOR_OFF) # Turn off before first check
